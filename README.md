@@ -15,19 +15,20 @@ This repository contains the analysis scripts necessary for reproducing the resu
 The config file for the standard analysis is included in the main directory as config.yaml,
  the only change being the number of permutations is reduced from 10M used in the main analysis
  to 100K because this is by far the most time consuming analysis step. To replicate the analysis
-in the paper, simply type
+in the paper, simply clone and `cd` into the repository, then type
 
-`Snakemake results`
+`$: Snakemake results`
 
 Other targets include `projection_figures` which will make the PCA+CCA projection and
 leave-one-out cross-validation plots, `preprocess_data` which will do all steps up
-to the quantification of corrected transcript levels and genotype PCs, and `get_data` which
-will simply download the necessary data from public locations.
+to and including the quantification of corrected transcript levels and genotype PCs, and `get_data`
+ which will simply download the necessary data from public locations.
 
 # Dependencies
 
-This using Python 3.6.2 with snakemake 3.13.3, numpy 1.13.3, pandas 0.20.3  and sklearn 0.19.1.
-The simplest way to aquire these requirements is to use Conda. For example:
+This was developed using Python 3.6.2 with snakemake 3.13.3, numpy 1.13.3, pandas 0.20.3
+ and sklearn 0.19.1.
+The simplest way to meet these requirements is to use anaconda. For example:
 
 ```
 :$ conda create -n PCA_CCA python=3.6.2
