@@ -8,15 +8,9 @@
 # :$ source activate PCA_CCA
 #
 # It also requires PLINK1.9 to be installed and available on the commad line. See https://www.cog-genomics.org/plink2
-#
-# Usage:
-# ------
-# TODO(brielin): write usage
+
 
 # Configuration
-# TODO(brielin): actually remove "bad" samples.
-# NA18861 and NA19144 left out, see 't Hoen et al Nat Biotech 2014 Detection of Problematic Samples
-# configfile: 'config.yaml'
 configfile: 'config.yaml'
 
 ## Convenience variables
@@ -31,15 +25,6 @@ genotype_dir = config['working_dir'] + '/genotype'
 results_dir = config['working_dir'] + '/results'
 kallisto_idx = config['working_dir'] + '/transcript_abundance/transcripts.idx'
 working_dir = config['working_dir']
-
-## Main rules
-    # results_dir + '/S_1a_cca_batch_proj.png',
-    # results_dir + '/S_1b_cca_correct_exp_lab.png',
-    # results_dir + '/S_1c_cca_correct_exp_pop.png',
-    # results_dir + '/S_1d_cca_correct_exp_projection.png',
-    # results_dir + '/S_2a_linear_exp.png',
-    # results_dir + '/S_2b_linear_exp_cv_projection.png',
-    # results_dir + '/S_2c_linear_p_val_hist.png',
 
 rule results:
   input:
@@ -291,6 +276,7 @@ rule model:
     if config['model'] == 'CCA':
         exp_coef, geno_coef, rho = util.lr_cca(exp_mat.values, geno_pcs.values,
              dim_x=config['dim_exp'], dim_z=config['dim_z'])
+         print(rho)
     elif config['model'] == 'regression':
         exp_coef, geno_coef = util.lr_regression(exp_mat.values, geno_pcs.values,
              dim_x=config['dim_exp'])
@@ -304,58 +290,7 @@ rule model:
     sample_info['Coordinate 2'] = exp_coef[:, 1]
     plot_pop = sns.lmplot(
         'Coordinate 1', 'Coordinate 2', hue='pop', data=sample_info, fit_reg=False)
-    # plot_pop.set(xticks=np.arange(-0.15, 0.15, 0.05))
-    print(rho)
     plot_pop.savefig(output.plot)
-
-# TODO(brielin): Delete this rule after verifying above works
-rule laa:
-  input:
-    geno_pcs = genotype_dir + '/geuvadis.eigenvec',
-    exp_mat = working_dir + '/expression_corrected.tsv',
-    sample_info = sample_info
-  output:
-    plot_pcs = results_dir + '/linear_pcs.png',
-    plot_all = results_dir + '/linear_all.png',
-  run:
-    import numpy as np
-    import pandas as pd
-    import matplotlib
-    matplotlib.use('Agg')  #workaround for x-windows
-    import seaborn as sns
-    from pca_cca import util
-    exp_mat = pd.read_csv(input.exp_mat, sep='\t', index_col=0)
-    geno_pcs = pd.read_csv(
-      input.geno_pcs, sep=' ', index_col=0, usecols=range(1,config['dim_snp']+2))
-    sample_info = pd.read_csv(input.sample_info, sep='\t', index_col=0)
-
-    common_inds = exp_mat.index.intersection(geno_pcs.index)
-    exp_mat = exp_mat.loc[common_inds]
-    geno_pcs = geno_pcs.loc[common_inds]
-    sample_info = sample_info.loc[common_inds]    
-    # u_y, _ = util.pca(exp_mat, config['dim_exp'])
-    u_y, s_y, v_y = np.linalg.svd(exp_mat)
-    u_y, s_y, v_y = u_y[:, 0:config['dim_exp']], s_y[0:config['dim_exp']], v_y[0:config['dim_exp']]
-    beta_pcs_hat, _, _, _ = np.linalg.lstsq(geno_pcs.values, u_y)
-    u_y_hat = geno_pcs.values.dot(beta_pcs_hat)
-
-    beta_all_hat, _, _, _ = np.linalg.lstsq(geno_pcs.values, exp_mat.values)
-    y_hat = geno_pcs.values.dot(beta_all_hat)
-    u_y_hat_all, _ = util.pca(y_hat, 2)
-
-    sample_info['Coordinate 1'] = u_y_hat[:, 0]
-    sample_info['Coordinate 2'] = u_y_hat[:, 1]
-    plot_pop = sns.lmplot(
-        'Coordinate 1', 'Coordinate 2', hue='pop', data=sample_info, fit_reg=False)
-    # plot_pop.set(xticks=np.arange(-0.15, 0.15, 0.05))
-    plot_pop.savefig(output.plot_pcs)
-
-    sample_info['Coordinate 1'] = u_y_hat_all[:, 0]
-    sample_info['Coordinate 2'] = u_y_hat_all[:, 1]
-    plot_pop = sns.lmplot(
-        'Coordinate 1', 'Coordinate 2', hue='pop', data=sample_info, fit_reg=False)
-    # plot_pop.set(xticks=np.arange(-0.15, 0.15, 0.05))
-    plot_pop.savefig(output.plot_all)
 
 
 rule compute_loo_genotype_pcs:
@@ -388,13 +323,14 @@ rule find_significant_genes:
   run:
     import pandas as pd
     from pca_cca import util
+    if config['model'] == 'regression':
+        raise ValueError('Gene finding not supported for regression model.')    
     exp_mat = pd.read_csv(input.exp_mat, index_col=0, sep='\t')
     geno_pcs = pd.read_csv(
       input.geno_pcs, sep=' ', index_col=0, usecols=range(1,config['dim_snp']+2))
     u_exp, _ = util.pca(exp_mat)
     perm_res = util.proj_gene_assoc(
-        exp_mat, u_exp, geno_pcs, config['dim_z'], n_perm=config['n_perm'], threads=threads,
-        method=config['model'])
+        exp_mat, u_exp, geno_pcs, config['dim_z'], n_perm=config['n_perm'], threads=threads)
     perm_res = perm_res.sort_values(by=['p-value', 'Z score'], ascending = [True, False])
     perm_res.to_csv(output.genes, sep='\t')
 
@@ -527,6 +463,8 @@ rule make_cv_projection_plot:
     import seaborn as sns
     from pca_cca import util
     from IPython import embed
+    if config['model'] == 'regression':
+        raise ValueError('CV not supported for regression model.')
     exp_mat = pd.read_csv(input.exp_mat, index_col=0, sep='\t')
     sample_info = pd.read_csv(input.sample_info, sep='\t', index_col=0)
     common_inds = exp_mat.index.intersection(sample_info.index)
@@ -534,7 +472,7 @@ rule make_cv_projection_plot:
     sample_info = sample_info.loc[common_inds]
     cv_exp_mat, error_df = util.build_cv_df(
       exp_mat, dict(zip(config['samples'], input.geno_pcs)),
-        config['dim_exp'], config['dim_snp'], config['dim_z'], threads, config['model'])
+        config['dim_exp'], config['dim_snp'], config['dim_z'], threads)
     u_cv_exp, _ = util.pca(cv_exp_mat.values, dim=2)
     sample_info['Coordinate 1'] = u_cv_exp[:, 0]
     sample_info['Coordinate 2'] = u_cv_exp[:, 1]

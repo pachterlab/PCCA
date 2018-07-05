@@ -14,8 +14,6 @@ import pandas as pd
 from time import time
 from sklearn import preprocessing
 
-from IPython import embed
-
 # pylint: disable=invalid-name
 def quantile_normalize(df):
   """Quantile normalizes a pandas DataFrame.
@@ -107,24 +105,21 @@ def get_genes_to_keep(gtf_file_name, annot='gene'):
   return keep
 
 
-def _cv_worker(df, sample, pc_loc, dim_y1, dim_y2, dim_z, method):
+def _cv_worker(df, sample, pc_loc, dim_y1, dim_y2, dim_z):
   y1_i = df.loc[sample].values
   df_no_i = df.drop(sample)
   u_y2_no_i = pd.read_csv(
       pc_loc, sep=' ', index_col=0, usecols=range(1, dim_y2+2))
   df_no_i = df_no_i.loc[u_y2_no_i.index]  # be careful with index
   u_y1_no_i, _ = pca(df_no_i.values, dim_y1)
-  if method == 'CCA':
-    l_y1, l_y2, _ = lr_cca(u_y1_no_i, u_y2_no_i.values, dim_z=dim_z)
-    df_i_full, tr_error, te_error = project_i_cca(
-      df_no_i, u_y1_no_i, l_y1, y1_i)
-  elif method == 'regression':
-    l_y1, l_y2 = lr_regression(u_y1_no_i, u_y2_no_i.values)
+  l_y1, l_y2, _ = lr_cca(u_y1_no_i, u_y2_no_i.values, dim_z=dim_z)
+  df_i_full, tr_error, te_error = project_i_cca(
+    df_no_i, u_y1_no_i, l_y1, y1_i)
   return df_i_full, tr_error, te_error
 
 
 # TODO(brielin): Consider making this function less specific.
-def build_cv_df(df, pc_locs, dim_y1, dim_y2, dim_z, threads=1, method='cca'):
+def build_cv_df(df, pc_locs, dim_y1, dim_y2, dim_z, threads=1):
   """Builds a df where each row is the projection of a held out ind.
 
   Args:
@@ -137,7 +132,7 @@ def build_cv_df(df, pc_locs, dim_y1, dim_y2, dim_z, threads=1, method='cca'):
     (expression) sidee of faa with the (genotype) PCs stored on disk, then back
     into faa space.
   """
-  args = [(df, sample, pc_loc, dim_y1, dim_y2, dim_z, method)
+  args = [(df, sample, pc_loc, dim_y1, dim_y2, dim_z)
           for sample, pc_loc in pc_locs.items()]
   with concurrent.futures.ProcessPoolExecutor(max_workers=threads) as executor:
     result = list(executor.map(_cv_worker, *zip(*args)))
@@ -150,31 +145,20 @@ def build_cv_df(df, pc_locs, dim_y1, dim_y2, dim_z, threads=1, method='cca'):
   return cv_df, error_df
 
 
-def _perm_worker(arr_x, u_x, u_y, dim_z, n_perm, true_var_exp, method):
+def _perm_worker(arr_x, u_x, u_y, dim_z, n_perm, true_var_exp):
   n_ind, n_genes = arr_x.shape
   perm_mean = np.zeros(n_genes)
   perm_mean_sq = np.zeros(n_genes)
   tail_counts = np.zeros(n_genes)
   seed = int(divmod(time(), 1)[1]*1e8)
   np.random.seed(seed)
-  # U, L, V = np.linalg.svd(arr_x, full_matrices=False)
-  # nsvs = np.sum(L > 1e-11)
-  # U = U[:, 0:nsvs]
-  # L = L[0:nsvs]
-  # V = V[0:nsvs].T
-  # SP = n_ind*V.dot(np.diag(L**(-2))).dot(V.T)
+
   for i in range(int(n_perm)):
     if i%1000 == 0: print(i)
     u_y_perm = np.random.permutation(u_y)
-    if method == 'CCA':
-      x_coef_perm, _, _ = _cca_worker(u_x, u_y_perm, dim_z)
-    elif method == 'regression':
-      beta_pcs_hat, _, _, _ = np.linalg.lstsq(u_y_perm, u_x)
-      x_coef_perm = u_y.dot(beta_pcs_hat)
+    x_coef_perm, _, _ = _cca_worker(u_x, u_y_perm, dim_z)
     B_perm = arr_x.T.dot(x_coef_perm)/np.sqrt(n_ind-1)
-    # print(B_perm.T.dot(SP).dot(B_perm))
     perm_var_exp = np.sum(B_perm**2, axis=1)
-    #print(abs(arr_xT_coef_perm).sum(), (arr_xT_coef_perm**2).sum())
     perm_mean += perm_var_exp/n_perm
     perm_mean_sq += (perm_var_exp**2)/n_perm
     tail_counts += (perm_var_exp >= true_var_exp)
@@ -182,7 +166,7 @@ def _perm_worker(arr_x, u_x, u_y, dim_z, n_perm, true_var_exp, method):
 
 
 def proj_gene_assoc(df_x, u_x, u_y, dim_z, n_perm=int(1e6), threads=10,
-                    alpha=0.05, method='CCA'):
+                    alpha=0.05):
   """Computes association statistics for each gene with the learned projection
 
   Args:
@@ -197,14 +181,10 @@ def proj_gene_assoc(df_x, u_x, u_y, dim_z, n_perm=int(1e6), threads=10,
   """
 
   n_ind, n_genes = df_x.shape
-  if method == 'CCA':
-    x_coef, _, _ = _cca_worker(u_x, u_y, dim_z)
-  elif method == 'regression':
-    beta_pcs_hat, _, _, _ = np.linalg.lstsq(u_y, u_x)
-    x_coef = u_y.dot(beta_pcs_hat)
+  x_coef, _, _ = _cca_worker(u_x, u_y, dim_z)
   B = df_x.values.T.dot(x_coef)/np.sqrt(n_ind-1)
   true_var_exp = np.sum(B**2, axis=1)
-  args = [(df_x.values, u_x, u_y, dim_z, n_perm/threads, true_var_exp, method)
+  args = [(df_x.values, u_x, u_y, dim_z, n_perm/threads, true_var_exp)
           for _ in range(threads)]
   with concurrent.futures.ProcessPoolExecutor(max_workers=threads) as executor:
     res = list(executor.map(_perm_worker, *zip(*args)))
@@ -266,7 +246,7 @@ def _cca_worker(u_x, u_y, dim):
   u_c, rho, v_c = np.linalg.svd(u_x.T.dot(u_y), full_matrices=False)
   l_x = u_x.dot(u_c[:, 0:dim])
   l_y = u_y.dot(v_c.T[:, 0:dim])
-  return l_x, l_y, rho
+  return l_x, l_y, rho[0:dim]
 
 
 def lr_cca(arr_x, arr_y, dim_x=None, dim_y=None, dim_z=None, standardize=False):
