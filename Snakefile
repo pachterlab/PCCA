@@ -276,7 +276,7 @@ rule model:
     if config['model'] == 'CCA':
         exp_coef, geno_coef, rho = util.lr_cca(exp_mat.values, geno_pcs.values,
              dim_x=config['dim_exp'], dim_z=config['dim_z'])
-         print(rho)
+        print(rho)
     elif config['model'] == 'regression':
         exp_coef, geno_coef = util.lr_regression(exp_mat.values, geno_pcs.values,
              dim_x=config['dim_exp'])
