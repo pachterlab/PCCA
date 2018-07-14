@@ -12,12 +12,15 @@ This repository contains the analysis scripts necessary for reproducing the resu
 - make_config.py: A utility for constructing the Snakemake config file, useful for adjusting
  the number of components used, and selecting the methods and populations to use in the analysis
 
-The config file for the standard analysis is included in the main directory as config.yaml,
- the only change being the number of permutations is reduced from 10M used in the main analysis
- to 100K because this is by far the most time consuming analysis step. To replicate the analysis
-in the paper, simply clone and `cd` into the repository, then type
+Running `python make_config.py` will produce the Snakemake config file equivalent to the
+standard analysis, the only change being the number of permutations is reduced from 10M used
+ in the main analysis to 10K because this is by far the most time consuming analysis step.
+ To replicate the analysis in the paper, simply clone and `cd` into the repository, then type
 
-`$: Snakemake results`
+```
+$: python make_config.py
+$: Snakemake results
+```
 
 Other targets include `projection_figures` which will make the PCA+CCA projection and
 leave-one-out cross-validation plots, `preprocess_data` which will do all steps up

@@ -42,8 +42,8 @@ def main():
   parser.add_argument(
       '--drop_yri',
       help='Drop YRI individuals for analysis. Default is keep them.',
-      action='store_false',
-      default=True)
+      action='store_true',
+      default=False)
   parser.add_argument(
       '--sample_file',
       help='Path of sample info file, default is local directory.',
@@ -58,20 +58,20 @@ def main():
       default='ids_to_process.txt')
   parser.add_argument(
       '--min_tpm',
-      help='Minimum mean TPM to include transcript. Default is 0.0001',
-      default=0.0001)
+      help='Minimum mean TPM to include transcript. Default is 0.1.',
+      default=0.1)
   parser.add_argument(
       '--min_maf',
-      help='Minimum MAF to include SNP. Default is 0.01',
-      default=0.01)
+      help='Minimum MAF to include SNP. Default is 0.05.',
+      default=0.05)
   parser.add_argument(
       '--dim_exp',
-      help='Number of expression hidden dimensions to model. Default is 12',
-      default=12)
+      help='Number of expression hidden dimensions to model. Default is 27.',
+      default=27)
   parser.add_argument(
       '--dim_snp',
-      help='Number of SNP hidden dimensions to model. Default is 8',
-      default=8)
+      help='Number of SNP hidden dimensions to model. Default is 11.',
+      default=11)
   parser.add_argument(
       '--dim_z',
       help='Number of parent latent dimensions to model. Default is 2',
@@ -79,8 +79,9 @@ def main():
   parser.add_argument(
       '--n_perm',
       help=('Number of permutations to perform to test gene significance.'
-            ' Default is 1M'),
-      default=int(1e6))
+            ' Default is 1000 for speed. This will not provide accurate p-value'
+            ' estimates, increase to 1M or more for estimates at FDR 5%.'),
+      default=int(10000))
   parser.add_argument(
       '--plink2_bin',
       help=('Location of the plink2 binary or name of it in your PATH.'
@@ -100,7 +101,7 @@ def main():
   if not args.keep_ceu:
     drop = sample_info[sample_info['pop'] == 'CEU'].index
     sample_info = sample_info.drop(drop)
-  if not args.drop_yri:
+  if args.drop_yri:
     drop = sample_info[sample_info['pop'] == 'YRI'].index
     sample_info = sample_info.drop(drop)
   if not KEEP_IMP:
