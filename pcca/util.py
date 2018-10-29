@@ -10,6 +10,7 @@ import functools
 
 import concurrent.futures
 import numpy as np
+import scipy as sp
 import pandas as pd
 from time import time
 from sklearn import preprocessing
@@ -56,6 +57,11 @@ def gtf_to_trans_gene_hash(gtf_file_name):
         trans_gene_hash[trans_name] = gene_name
   return trans_gene_hash
 
+def get_col_names(file_name):
+  with open(file_name) as file_handle:
+    col_names = file_handle.readline().strip().split('\t')
+  return col_names
+
 def trans_to_gene_df(trans_df, trans_gene_hash):
   """Turns a df of transcript levels into gene levels based on trans_gene_bash.
 
@@ -72,6 +78,31 @@ def trans_to_gene_df(trans_df, trans_gene_hash):
   for transcript in trans_df.columns:
     gene_df[trans_gene_hash[transcript]] += trans_df[transcript]
   return gene_df
+
+def build_gene_location_dict(gtf_file_name, genes_to_use):
+  gene_location_dict = dict()
+  if gtf_file_name[-3:] == '.gz':
+    open_fn = functools.partial(gzip.open, mode='rt')
+  else:
+    open_fn = open
+  with open_fn(gtf_file_name) as gtf_file:
+    for line in gtf_file:
+      if line[0:2] == '##':  # skip comments
+        continue
+      l = line.strip().split()
+      feat_type = l[2]
+      gene_name = l[9][1:-2]
+      if feat_type == 'gene' and gene_name in genes_to_use:
+        strand = l[6]
+        chrom = l[0][3:]
+        if strand == '+' and chrom not in ['X', 'Y', 'M']:
+          tss = l[3]
+          gene_location_dict[gene_name] = [chrom, tss]
+        elif chrom not in ['X', 'Y', 'M']:
+          tss = l[4]
+          gene_location_dict[gene_name] = [chrom, tss]
+  return gene_location_dict
+
 
 def _keep_gene(chrm, start, stop):
   """Determines whether a gene at chr start stop is autosomal non-MHC.
@@ -134,6 +165,8 @@ def build_cv_df(df, pc_locs, dim_y1, dim_y2, dim_z, threads=1):
   """
   args = [(df, sample, pc_loc, dim_y1, dim_y2, dim_z)
           for sample, pc_loc in pc_locs.items()]
+  # from IPython import embed
+  # embed()
   with concurrent.futures.ProcessPoolExecutor(max_workers=threads) as executor:
     result = list(executor.map(_cv_worker, *zip(*args)))
   projections, tr_error, te_error = zip(*result)
@@ -200,8 +233,7 @@ def proj_gene_assoc(df_x, u_x, u_y, dim_z, n_perm=int(1e6), threads=10,
          'Perm mean': perm_mean, 'Perm SD': perm_std_dev}, index=df_x.columns)
   perm_res = perm_res.sort_values('p-value')
   n_genes = perm_res.shape[0]
-  cm = 0
-  for i in range(1, n_genes+1): cm += 1/i  # There has to be a closed form for this...
+  cm = np.log(n_genes) + np.euler_gamma + 1/(2*n_genes)
   for i, p in enumerate(perm_res['p-value']):
     if p > ((i+1)*alpha)/(n_genes*cm): break
   bhy_cutoff = (i*alpha)/(n_genes*cm)
@@ -210,6 +242,52 @@ def proj_gene_assoc(df_x, u_x, u_y, dim_z, n_perm=int(1e6), threads=10,
   perm_res['significant_bonf'] = (perm_res['p-value'] < alpha/n_genes)
   return perm_res  
 
+def _pca_perm_worker(arr_x, n_comp, n_perm, true_var_exp):
+  n_ind, n_genes = arr_x.shape
+  perm_mean = np.zeros(n_genes)
+  perm_mean_sq = np.zeros(n_genes)
+  tail_counts = np.zeros(n_genes)
+  seed = int(divmod(time(), 1)[1]*1e8)
+  np.random.seed(seed)
+  for i in range(int(n_perm)):
+    if i%1000 == 0: print(i)
+    for j in range(n_genes):
+      np.random.shuffle(arr_x[:, j])
+    u_x_perm, _ = pca(arr_x, dim=n_comp)
+    B_perm = arr_x.T.dot(u_x_perm)/np.sqrt(n_ind-1)
+    perm_var_exp = np.sum(B_perm**2, axis=1)
+    perm_mean += perm_var_exp/n_perm
+    perm_mean_sq += (perm_var_exp**2)/n_perm
+    tail_counts += (perm_var_exp >= true_var_exp)
+  return perm_mean, perm_mean_sq, tail_counts
+
+def pca_gene_assoc(df_x, n_comp, n_perm=int(1e6), threads=10, alpha=0.05):
+  n_ind, n_genes = df_x.shape
+  u_x, _ = pca(df_x.values, dim=n_comp)
+  B = df_x.values.T.dot(u_x)/np.sqrt(n_ind-1)
+  true_var_exp = np.sum(B**2, axis=1)
+  args = [(df_x.values, n_comp, n_perm/threads, true_var_exp) for _ in range(threads)]
+  with concurrent.futures.ProcessPoolExecutor(max_workers=threads) as executor:
+    res = list(executor.map(_pca_perm_worker, *zip(*args)))
+  perm_mean, perm_mean_sq, tail_counts = map(sum, list(map(list, zip(*res))))
+  perm_mean = perm_mean/threads
+  perm_mean_sq = perm_mean_sq/threads
+  perm_std_dev = np.sqrt(perm_mean_sq - perm_mean**2)
+  p_vals = tail_counts/n_perm
+  z_scores = (true_var_exp - perm_mean)/perm_std_dev
+  perm_res = pd.DataFrame(
+        {'Z score': z_scores, 'p-value': p_vals,  'Var exp': true_var_exp,
+         'Perm mean': perm_mean, 'Perm SD': perm_std_dev}, index=df_x.columns)
+  perm_res = perm_res.sort_values('p-value')
+  n_genes = perm_res.shape[0]
+  cm = np.log(n_genes) + np.euler_gamma + 1/(2*n_genes)
+  for i, p in enumerate(perm_res['p-value']):
+    if p > ((i+1)*alpha)/(n_genes*cm): break
+  bhy_cutoff = (i*alpha)/(n_genes*cm)
+  print(bhy_cutoff, alpha/n_genes)
+  perm_res['significant_bhy'] = (perm_res['p-value'] < bhy_cutoff)
+  perm_res['significant_bonf'] = (perm_res['p-value'] < alpha/n_genes)
+  return perm_res
 
 def pca(arr_x, dim=None):
   """Computes first dim principles axes of arr_x.
@@ -313,3 +391,12 @@ def project_i_cca(arr_x, u_x, l_x, x_i):
   tr_error = np.mean((X_full-_arr_x)**2)
   te_error = np.mean((x_i-x_i_full)**2)
   return x_i_full, tr_error, te_error
+
+
+def make_qq_plot_data(values, points=100, max_val=8.0):
+  log_unif = -np.log10(np.linspace(0, 1, len(values)+1)[1:])
+  quantile_expected = np.linspace(0, max_val, points)
+  percs = [sp.stats.percentileofscore(log_unif, score)
+           for score in quantile_expected]
+  quantile_observed = np.percentile(-np.log10(values), percs)
+  return quantile_expected, quantile_observed

@@ -66,12 +66,12 @@ def main():
       default=0.05)
   parser.add_argument(
       '--dim_exp',
-      help='Number of expression hidden dimensions to model. Default is 27.',
-      default=27)
+      help='Number of expression hidden dimensions to model. Default is 30.',
+      default=30)
   parser.add_argument(
       '--dim_snp',
-      help='Number of SNP hidden dimensions to model. Default is 11.',
-      default=11)
+      help='Number of SNP hidden dimensions to model. Default is 5.',
+      default=5)
   parser.add_argument(
       '--dim_z',
       help='Number of parent latent dimensions to model. Default is 2',
@@ -88,13 +88,29 @@ def main():
             ' Default is plink2 in PATH.'),
       default='plink2')
   parser.add_argument(
+      '--peertool_bin',
+      help=('Location of the peertool binary or name of it in your PATH.'
+            ' Default is peertool in PATH.'),
+      default='peertool')
+  parser.add_argument(
       '--correction',
-      help='Correction method to use for gene expression. CCA or regression.',
+      help=('Correction method to use for gene expression. CCA, regression,'
+            ' peerN (eg. peer10), or None.'),
       default='regression')
   parser.add_argument(
       '--model',
       help='Analysis model to use. CCA or regression.',
       default='CCA')
+  parser.add_argument(
+      '--subsample',
+      nargs=2,
+      help=('A pair of floating point values between 0.0 and 1.0 that will be'
+            ' used to subsample genes and SNPs, respectively.'),
+      default=[1.0, 1.0])
+  parser.add_argument(
+      '--eqtl_threshold',
+      default=1e-6,
+      help='Significance threashold to use for calling eQTL results.')
   args = parser.parse_args()
 
   sample_info = pd.read_csv(args.sample_file, sep='\t')
@@ -111,8 +127,7 @@ def main():
   #  Don't rewrite the geu_id_file unless it has changed so we dont trigger
   #  Snakemake to re-run some rules.
   try:
-    id_file_old = pd.read_csv(
-        args.geu_id_file, sep=' ', header=None, names=['fid', 'sample_name'])
+    id_file_old = pd.read_csv(args.geu_id_file, sep='\t')
     if set(id_file_old['sample_name']).symmetric_difference(sample_info['sample_name']):
         sample_info[['fid', 'sample_name']].to_csv(
           args.geu_id_file, sep='\t', index=False)
@@ -129,7 +144,11 @@ def main():
     config_file.write('dim_z: ' + str(args.dim_z) + '\n')
     config_file.write('n_perm: ' + str(args.n_perm) + '\n')
     config_file.write('plink2_bin: ' + args.plink2_bin + '\n')
+    config_file.write('peertool_bin: ' + args.peertool_bin + '\n')
     config_file.write('correction: ' + args.correction + '\n')
+    config_file.write('subsample_exp: ' + str(args.subsample[0]) + '\n')
+    config_file.write('subsample_geno: ' + str(args.subsample[1]) + '\n')
+    config_file.write('eqtl_threshold: ' + str(args.eqtl_threshold) + '\n')
     config_file.write('model: ' + args.model + '\n')
     if args.working_dir is not None:
       config_file.write('working_dir: ' + args.working_dir + '\n')

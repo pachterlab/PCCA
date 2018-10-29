@@ -1,0 +1,19 @@
+name: PCA_CCA_test
+channels:
+- bioconda
+- conda-forge
+- defaults
+dependencies:
+- ipython
+- kallisto
+- matplotlib
+- matplotlib_venn
+- numpy=1.13.3
+- pandas=0.20.3
+- peer
+- plink2=1.90b3.35
+- python=3.6.2
+- scikit-learn=0.19.1
+- snakemake=3.13.3
+- seaborn
+- wget

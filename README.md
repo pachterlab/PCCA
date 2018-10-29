@@ -19,7 +19,7 @@ standard analysis, the only change being the number of permutations is reduced f
 
 ```
 $: python make_config.py
-$: Snakemake results
+$: snakemake results
 ```
 
 Other targets include `projection_figures` which will make the PCA+CCA projection and
@@ -30,12 +30,13 @@ to and including the quantification of corrected transcript levels and genotype 
 # Dependencies
 
 This was developed using Python 3.6.2 with snakemake 3.13.3, numpy 1.13.3, pandas 0.20.3
- and sklearn 0.19.1.
-The simplest way to meet these requirements is to use anaconda. For example:
+ sklearn 0.19.1 and seaborn 0.9.0. It also requires plink2 and kallisto be available on the
+command line. To use peer for batch correction, peer must also be available on the command line.
+We have included an environment.yaml file to assist with setting up an anaconda environment
+that is sufficient.
 
 ```
-:$ conda create -n PCA_CCA python=3.6.2
-:$ conda install -n PCA_CCA -c bioconda snakemake
+:$ conda env create --file environment.yaml
 :$ source activate PCA_CCA
 ```
 
