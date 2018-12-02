@@ -1,4 +1,4 @@
-PCA+CCA
+Principal Component Correlation Analysis (PCCA)
 =======
 
 This repository contains the analysis scripts necessary for reproducing the results in "Expression
@@ -22,7 +22,7 @@ $: python make_config.py
 $: snakemake results
 ```
 
-Other targets include `projection_figures` which will make the PCA+CCA projection and
+Other targets include `projection_figures` which will make the PCCA projection and
 leave-one-out cross-validation plots, `preprocess_data` which will do all steps up
 to and including the quantification of corrected transcript levels and genotype PCs, and `get_data`
  which will simply download the necessary data from public locations.
@@ -37,7 +37,7 @@ that is sufficient.
 
 ```
 :$ conda env create --file environment.yaml
-:$ source activate PCA_CCA
+:$ source activate PCCA
 ```
 
 # Use as a library
