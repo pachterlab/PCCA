@@ -1,4 +1,4 @@
-name: PCA_CCA_test
+name: PCCA
 channels:
 - bioconda
 - conda-forge
